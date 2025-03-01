@@ -107,7 +107,7 @@
     <div id="gravityBar" aria-hidden="true"></div>
 
     <main class="container">
-        <!-- 为文章加上 id 以便后续操作 -->
+        <!-- 给文章元素加上 id 以便后续操作 -->
         <article id="scroll-article">
             <!-- 完整哲学段落开始 -->
             <p class="quantumParagraph">唯一严肃的哲学问题是应不应该自杀 -西西弗斯的神话</p>
@@ -161,7 +161,7 @@
             let lastTime = performance.now();
             let rafId = null;
 
-            // 为了使新增的文章中的段落也能被动态效果应用，这里用一个函数获取最新的 .quantumParagraph 节点
+            // 获取最新的 .quantumParagraph 节点，确保新增内容也能应用动态效果
             const init = () => {
                 const elements = {
                     gravityBar: document.getElementById('gravityBar'),
@@ -183,7 +183,7 @@
                 const container = elements.container;
                 const originalArticle = document.getElementById('scroll-article');
 
-                // 初始时保证容器内至少有两个连续的文章内容
+                // 初始时确保容器内至少有两个连续的文章内容
                 if (container.getElementsByTagName('article').length < 2) {
                     const clone = originalArticle.cloneNode(true);
                     container.appendChild(clone);
@@ -194,46 +194,39 @@
                     const deltaTime = Math.max(1, currentTime - lastTime);
                     lastTime = currentTime;
 
-                    // 获取最新的段落元素，使新追加的内容也能生效
+                    // 获取最新段落（包括新增的）
                     const paragraphs = elements.getParagraphs();
-                    // 根据 entropy 计算一个混沌变量，用于视觉效果
                     const chaos = Math.sin(entropy) * 20;
                     paragraphs.forEach(p => {
-                        // 1. 行间距随着滚动速度增大而增大：基本值 1.8，加上一个与 speed 相关的增量（这里可根据实际效果调节系数）
+                        // 行间距随滚动速度增加：基础值1.8，加上一个与 speed 相关的增量
                         let newLineHeight = 1.8 + Math.min(1.2, Math.abs(speed) * 5);
                         p.style.lineHeight = newLineHeight;
 
-                        // 2. 字体有概率歪斜：20% 概率随机生成 -5° ~ 5° 的 skewY 角度
+                        // 字体有概率歪斜：20% 的概率随机产生 -5° ~ 5° 的 skewY 效果
                         let applySkew = Math.random() < 0.2;
                         let skewDeg = applySkew ? (Math.random() * 10 - 5) : 0;
-                        // 同时可加上一个基于 chaos 的水平平移效果
                         let translateX = chaos;
                         p.style.transform = `skewY(${skewDeg}deg) translateX(${translateX}px)`;
 
-                        // 其余效果保持原有设定
                         p.style.margin = `${30 + chaos * 0.5}px auto`;
                         p.style.opacity = 0.7 + Math.abs(Math.sin(entropy)) * 0.3;
                     });
 
-                    // 无限循环逻辑：
-                    // 1. 如果最下方的文章内容已经进入可视区，则克隆追加一份相同内容
-                    const containerRect = container.getBoundingClientRect();
-                    const containerTop = containerRect.top + window.scrollY;
+                    // 无限循环逻辑
+                    // 判断最后一个 article 的底部位置，如果其离视口底部不足 1.5 个屏幕高度，则追加新内容
                     const articles = container.getElementsByTagName('article');
                     const lastArticle = articles[articles.length - 1];
-                    const lastArticleAbsoluteTop = containerTop + lastArticle.offsetTop;
-                    if (lastArticleAbsoluteTop < window.scrollY + window.innerHeight) {
-                        const clone = lastArticle.cloneNode(true);
+                    if (lastArticle.getBoundingClientRect().bottom < window.innerHeight * 1.5) {
+                        const clone = originalArticle.cloneNode(true);
                         container.appendChild(clone);
                     }
 
-                    // 2. 如果最上方的文章内容已经完全离开视口，则将其删除，并修正滚动位置
+                    // 删除完全离开视口的最上方文章，并修正滚动位置
                     const firstArticle = articles[0];
-                    const firstArticleAbsoluteTop = containerTop + firstArticle.offsetTop;
-                    if (firstArticleAbsoluteTop + firstArticle.offsetHeight < window.scrollY) {
+                    if (firstArticle.getBoundingClientRect().bottom < 0) {
+                        const removedHeight = firstArticle.offsetHeight;
                         container.removeChild(firstArticle);
-                        // 修正滚动位置，使得页面看起来连续
-                        window.scrollTo(0, window.scrollY - firstArticle.offsetHeight);
+                        window.scrollTo(0, window.scrollY - removedHeight);
                         cycleCount++;
                         elements.cycleCounter.textContent = `循环次数：${cycleCount}`;
                     }
@@ -244,7 +237,8 @@
                 const handleInput = (deltaY) => {
                     const now = performance.now();
                     const deltaTime = Math.max(1, now - lastTime);
-                    speed = deltaY / deltaTime;
+                    // 计算滚动速度，并限制在 -3 ~ 3 范围内
+                    speed = Math.max(-3, Math.min(3, deltaY / deltaTime));
                     entropy = Math.min(100, entropy + Math.abs(speed) * 0.003);
                     cancelAnimationFrame(rafId);
                     rafId = requestAnimationFrame(updateScene);
@@ -256,7 +250,7 @@
 
                 window.addEventListener('touchmove', e => {
                     if (e.touches[0]) {
-                        const delta = (e.touches[0].clientY - lastTouchY) * 1.8;
+                        const delta = (e.touches[0].clientY - lastTouchY) * 1; // multiplier 降为1
                         handleInput(delta);
                         lastTouchY = e.touches[0].clientY;
                     }
