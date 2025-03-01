@@ -6,20 +6,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>量子推石模拟器</title>
     <style>
-        /* 计数器样式 */
-        #cycleCounter {
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            color: rgba(255, 255, 255, 0.9);
-            z-index: 1000;
-            background: rgba(0, 0, 0, 0.5);
-            padding: 5px 10px;
-            border-radius: 5px;
-            font-family: Arial, sans-serif;
-            font-size: 14px;
-        }
-
         :root {
             --bg-color: #1a1a1a;
             --text-color: rgba(255, 255, 255, 0.9);
@@ -47,9 +33,24 @@
             z-index: 1000;
         }
 
+        #cycleCounter {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            color: rgba(255, 255, 255, 0.9);
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            transition: opacity 0.3s;
+        }
+
         .container {
             padding: 20vh 5vw;
             min-height: 500vh;
+            transition: min-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .quantumParagraph {
@@ -152,26 +153,35 @@
         (function () {
             'use strict';
 
-            let cycleCount = 0; // 循环计数器
-            let lastTouchY = 0; // 用于移动端触摸计算
-            let speed = 0;      // 滑动速度
+            let cycleCount = 0;
+            let lastTouchY = 0;
+            let speed = 0;
+            let isAnimating = false;
 
             const init = () => {
                 const elements = {
                     gravityBar: document.getElementById('gravityBar'),
                     paragraphs: document.querySelectorAll('.quantumParagraph'),
-                    body: document.body,
-                    cycleCounter: document.getElementById('cycleCounter')
+                    cycleCounter: document.getElementById('cycleCounter'),
+                    container: document.querySelector('.container')
                 };
 
-                // 触摸事件初始化
                 window.addEventListener('touchstart', e => {
-                    if (e.touches.length) {
-                        lastTouchY = e.touches[0].clientY;
-                    }
+                    if (e.touches[0]) lastTouchY = e.touches[0].clientY;
                 }, { passive: true });
 
                 return elements;
+            };
+
+            const safeScrollTo = () => {
+                if (isAnimating) return;
+                isAnimating = true;
+
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                elements.cycleCounter.textContent = `循环次数：${++cycleCount}`;
+                elements.container.style.minHeight = `${500 + cycleCount * 200}vh`;
+
+                setTimeout(() => isAnimating = false, 800);
             };
 
             document.addEventListener('DOMContentLoaded', () => {
@@ -184,30 +194,26 @@
 
                 const updateScene = () => {
                     const chaos = Math.sin(entropy) * 20;
-                    const scrollHeight = Math.max(
-                        document.documentElement.scrollHeight,
-                        document.body.scrollHeight
-                    );
+                    const scrollHeight = document.documentElement.scrollHeight;
+                    const clientHeight = document.documentElement.clientHeight;
 
+                    // 动态调整行高和倾斜
                     elements.paragraphs.forEach(p => {
-                        // 动态行高（1.8~3.0）
-                        p.style.lineHeight = `${Math.min(3, Math.max(1.8, 1.8 + speed * 0.005))}`;
+                        p.style.lineHeight = `${Math.min(3, Math.max(1.8, 1.8 + Math.abs(speed) * 0.008))}`;
 
-                        // 30%概率倾斜
-                        const skewValue = Math.random() < 0.3 ? chaos * 0.3 : 0;
-                        p.style.transform = `skewY(${skewValue}deg) translateX(${chaos}px)`;
+                        if (Math.random() < 0.3) {
+                            p.style.transform = `skewY(${chaos * (speed > 0 ? 0.3 : -0.3)}deg) 
+                                                  translateX(${chaos}px)`;
+                        }
 
                         p.style.margin = `${30 + chaos * 0.5}px auto`;
                         p.style.opacity = 0.7 + Math.abs(Math.sin(entropy)) * 0.3;
                     });
 
-                    // 无限滚动检测
-                    if (window.scrollY > scrollHeight * 0.98) {
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                        elements.cycleCounter.textContent = `循环次数：${++cycleCount}`;
-                        elements.paragraphs.forEach(p => {
-                            p.style.borderLeftColor = `hsl(${Math.random() * 360}, 70%, 50%)`;
-                        });
+                    // 无限滚动逻辑
+                    if (window.scrollY > scrollHeight - clientHeight * 1.2) {
+                        safeScrollTo();
+                        document.body.getBoundingClientRect(); // 强制重绘
                     }
 
                     rafId = requestAnimationFrame(updateScene);
@@ -216,23 +222,21 @@
                 const handleInput = (deltaY) => {
                     const now = performance.now();
                     const deltaTime = Math.max(1, now - lastTime);
-                    speed = Math.abs(deltaY) / deltaTime; // 计算实时速度
-                    entropy = Math.min(100, entropy + speed * 0.003);
+                    speed = deltaY / deltaTime;
+                    entropy = Math.min(100, entropy + Math.abs(speed) * 0.003);
                     lastTime = now;
 
-                    if (rafId) cancelAnimationFrame(rafId);
+                    cancelAnimationFrame(rafId);
                     rafId = requestAnimationFrame(updateScene);
                 };
 
-                // 桌面端事件
+                // 事件监听
                 window.addEventListener('wheel', e => handleInput(e.deltaY), { passive: true });
-
-                // 移动端事件
                 window.addEventListener('touchmove', e => {
-                    if (e.touches.length) {
-                        const currentY = e.touches[0].clientY;
-                        handleInput(currentY - lastTouchY);
-                        lastTouchY = currentY;
+                    if (e.touches[0]) {
+                        const delta = (e.touches[0].clientY - lastTouchY) * 1.8;
+                        handleInput(delta);
+                        lastTouchY = e.touches[0].clientY;
                     }
                 }, { passive: true });
 
