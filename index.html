@@ -63,7 +63,7 @@
             padding-left: 2rem;
             transform-origin: left center;
             transition: var(--transition);
-            will-change: transform, opacity, margin;
+            will-change: transform, opacity, margin, line-height;
         }
 
         .ad-section {
@@ -107,7 +107,8 @@
     <div id="gravityBar" aria-hidden="true"></div>
 
     <main class="container">
-        <article>
+        <!-- 为文章加上 id 以便后续操作 -->
+        <article id="scroll-article">
             <!-- 完整哲学段落开始 -->
             <p class="quantumParagraph">唯一严肃的哲学问题是应不应该自杀 -西西弗斯的神话</p>
 
@@ -156,12 +157,15 @@
             let cycleCount = 0;
             let lastTouchY = 0;
             let speed = 0;
-            let isAnimating = false;
+            let entropy = 0;
+            let lastTime = performance.now();
+            let rafId = null;
 
+            // 为了使新增的文章中的段落也能被动态效果应用，这里用一个函数获取最新的 .quantumParagraph 节点
             const init = () => {
                 const elements = {
                     gravityBar: document.getElementById('gravityBar'),
-                    paragraphs: document.querySelectorAll('.quantumParagraph'),
+                    getParagraphs: () => document.querySelectorAll('.quantumParagraph'),
                     cycleCounter: document.getElementById('cycleCounter'),
                     container: document.querySelector('.container')
                 };
@@ -173,47 +177,65 @@
                 return elements;
             };
 
-            const safeScrollTo = () => {
-                if (isAnimating) return;
-                isAnimating = true;
-
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-                elements.cycleCounter.textContent = `循环次数：${++cycleCount}`;
-                elements.container.style.minHeight = `${500 + cycleCount * 200}vh`;
-
-                setTimeout(() => isAnimating = false, 800);
-            };
-
             document.addEventListener('DOMContentLoaded', () => {
                 const elements = init();
                 if (!elements) return;
+                const container = elements.container;
+                const originalArticle = document.getElementById('scroll-article');
 
-                let entropy = 0;
-                let lastTime = performance.now();
-                let rafId = null;
+                // 初始时保证容器内至少有两个连续的文章内容
+                if (container.getElementsByTagName('article').length < 2) {
+                    const clone = originalArticle.cloneNode(true);
+                    container.appendChild(clone);
+                }
 
                 const updateScene = () => {
+                    const currentTime = performance.now();
+                    const deltaTime = Math.max(1, currentTime - lastTime);
+                    lastTime = currentTime;
+
+                    // 获取最新的段落元素，使新追加的内容也能生效
+                    const paragraphs = elements.getParagraphs();
+                    // 根据 entropy 计算一个混沌变量，用于视觉效果
                     const chaos = Math.sin(entropy) * 20;
-                    const scrollHeight = document.documentElement.scrollHeight;
-                    const clientHeight = document.documentElement.clientHeight;
+                    paragraphs.forEach(p => {
+                        // 1. 行间距随着滚动速度增大而增大：基本值 1.8，加上一个与 speed 相关的增量（这里可根据实际效果调节系数）
+                        let newLineHeight = 1.8 + Math.min(1.2, Math.abs(speed) * 5);
+                        p.style.lineHeight = newLineHeight;
 
-                    // 动态调整行高和倾斜
-                    elements.paragraphs.forEach(p => {
-                        p.style.lineHeight = `${Math.min(3, Math.max(1.8, 1.8 + Math.abs(speed) * 0.008))}`;
+                        // 2. 字体有概率歪斜：20% 概率随机生成 -5° ~ 5° 的 skewY 角度
+                        let applySkew = Math.random() < 0.2;
+                        let skewDeg = applySkew ? (Math.random() * 10 - 5) : 0;
+                        // 同时可加上一个基于 chaos 的水平平移效果
+                        let translateX = chaos;
+                        p.style.transform = `skewY(${skewDeg}deg) translateX(${translateX}px)`;
 
-                        if (Math.random() < 0.3) {
-                            p.style.transform = `skewY(${chaos * (speed > 0 ? 0.3 : -0.3)}deg) 
-                                                  translateX(${chaos}px)`;
-                        }
-
+                        // 其余效果保持原有设定
                         p.style.margin = `${30 + chaos * 0.5}px auto`;
                         p.style.opacity = 0.7 + Math.abs(Math.sin(entropy)) * 0.3;
                     });
 
-                    // 无限滚动逻辑
-                    if (window.scrollY > scrollHeight - clientHeight * 1.2) {
-                        safeScrollTo();
-                        document.body.getBoundingClientRect(); // 强制重绘
+                    // 无限循环逻辑：
+                    // 1. 如果最下方的文章内容已经进入可视区，则克隆追加一份相同内容
+                    const containerRect = container.getBoundingClientRect();
+                    const containerTop = containerRect.top + window.scrollY;
+                    const articles = container.getElementsByTagName('article');
+                    const lastArticle = articles[articles.length - 1];
+                    const lastArticleAbsoluteTop = containerTop + lastArticle.offsetTop;
+                    if (lastArticleAbsoluteTop < window.scrollY + window.innerHeight) {
+                        const clone = lastArticle.cloneNode(true);
+                        container.appendChild(clone);
+                    }
+
+                    // 2. 如果最上方的文章内容已经完全离开视口，则将其删除，并修正滚动位置
+                    const firstArticle = articles[0];
+                    const firstArticleAbsoluteTop = containerTop + firstArticle.offsetTop;
+                    if (firstArticleAbsoluteTop + firstArticle.offsetHeight < window.scrollY) {
+                        container.removeChild(firstArticle);
+                        // 修正滚动位置，使得页面看起来连续
+                        window.scrollTo(0, window.scrollY - firstArticle.offsetHeight);
+                        cycleCount++;
+                        elements.cycleCounter.textContent = `循环次数：${cycleCount}`;
                     }
 
                     rafId = requestAnimationFrame(updateScene);
@@ -224,14 +246,14 @@
                     const deltaTime = Math.max(1, now - lastTime);
                     speed = deltaY / deltaTime;
                     entropy = Math.min(100, entropy + Math.abs(speed) * 0.003);
-                    lastTime = now;
-
                     cancelAnimationFrame(rafId);
                     rafId = requestAnimationFrame(updateScene);
                 };
 
-                // 事件监听
-                window.addEventListener('wheel', e => handleInput(e.deltaY), { passive: true });
+                window.addEventListener('wheel', e => {
+                    handleInput(e.deltaY);
+                }, { passive: true });
+
                 window.addEventListener('touchmove', e => {
                     if (e.touches[0]) {
                         const delta = (e.touches[0].clientY - lastTouchY) * 1.8;
